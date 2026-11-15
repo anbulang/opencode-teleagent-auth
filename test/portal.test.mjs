@@ -33,6 +33,7 @@ import {
   readPortalAuth,
   portalRequest,
   fetchPoints,
+  extractPointBatches,
   fetchDailyStatus,
   claimDaily,
   fetchUserCenter,
@@ -587,6 +588,94 @@ describe('fetchPoints', () => {
     const r = await fetchPoints(AUTH, { fetchImpl: impl })
     expect(r.ok).toBe(false)
     expect(r.error).toContain('500')
+  })
+
+  it('展开 isAggregated 的 subItems 并按到期时间排序与汇总近期到期积分', async () => {
+    const impl = fakeFetch(() => okJson({
+      pointsBalance: 6274.26,
+      userRole: 'INDIVIDUAL',
+      groups: [{
+        type: 'campaign',
+        typeName: '积分福利社',
+        active: [{
+          name: '积分福利社',
+          balance: 6274.26,
+          effectiveEnd: '2026-11-30 23:59:59',
+          isAggregated: true,
+          subItems: [
+            { name: '首登即赠积分礼', balance: 3000, effectiveEnd: '2027-02-12 07:10:41', planCode: 'bp_act_newuser' },
+            { name: '月度积分赠礼', balance: 2974.26, effectiveEnd: '2026-11-30 23:59:59', planCode: 'bp_sys_monthly_basic' },
+            { name: '每日登录积分', balance: 100, effectiveEnd: '2026-12-11 23:59:59', planCode: 'bp_sys_daily_login' },
+            { name: '每日登录积分', balance: 200, effectiveEnd: '2026-11-30 23:59:59', planCode: 'bp_sys_daily_login' },
+          ],
+        }],
+      }],
+    }))
+    const r = await fetchPoints(AUTH, { fetchImpl: impl })
+    expect(r.ok).toBe(true)
+    expect(r.expiresAt).toBe('2026-11-30 23:59:59')
+    expect(r.batches.length).toBe(4)
+    expect(r.batches[0].effectiveEnd).toBe('2026-11-30 23:59:59')
+    expect(r.batches[3].name).toBe('首登即赠积分礼')
+    expect(r.expiringSoon).toEqual({
+      date: '2026-11-30',
+      effectiveEnd: '2026-11-30 23:59:59',
+      balance: 3174.26,
+      names: ['月度积分赠礼', '每日登录积分'],
+    })
+  })
+})
+
+describe('readPortalAuth 缓存兜底', () => {
+  const makeJwt = (expSec) => {
+    const h = Buffer.from('{"alg":"HS256"}').toString('base64url')
+    const p = Buffer.from(JSON.stringify({ exp: expSec })).toString('base64url')
+    return `${h}.${p}.sig`
+  }
+
+  it('Cookies 成功读取后写入缓存；后续遇到 EBUSY 时自动回退到未过期缓存', () => {
+    const { home, userData, cleanup } = makeHome()
+    try {
+      const scope = 'v1_public_2092131099330392064'
+      const db = touch(path.join(userData, 'Partitions', `owner%3A${scope}`, 'Network', 'Cookies'))
+      const validJwt = makeJwt(Math.floor(Date.now() / 1000) + 3600)
+      const first = readPortalAuth(home, scope, {
+        run: () => `operationToken|${validJwt}\noperToken|oper-1\n`,
+      })
+      expect(first?.operationToken).toBe(validJwt)
+      expect(first?.source).toBe(db)
+
+      // 模拟桌面端运行锁库（run 抛 EBUSY）
+      const fallback = readPortalAuth(home, scope, {
+        run: () => { throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' }) },
+      })
+      expect(fallback).toEqual({
+        userId: '2092131099330392064',
+        operationToken: validJwt,
+        operToken: 'oper-1',
+        source: 'cache',
+      })
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('缓存中的 JWT 已过期时，不回退使用过期凭据', () => {
+    const { home, userData, cleanup } = makeHome()
+    try {
+      const scope = 'v1_public_2092131099330392064'
+      touch(path.join(userData, 'Partitions', `owner%3A${scope}`, 'Network', 'Cookies'))
+      const expiredJwt = makeJwt(Math.floor(Date.now() / 1000) - 60)
+      readPortalAuth(home, scope, {
+        run: () => `operationToken|${expiredJwt}\n`,
+      })
+      const fallback = readPortalAuth(home, scope, {
+        run: () => { throw new Error('EBUSY') },
+      })
+      expect(fallback).toBeNull()
+    } finally {
+      cleanup()
+    }
   })
 })
 
