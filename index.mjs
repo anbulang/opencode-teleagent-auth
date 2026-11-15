@@ -320,12 +320,12 @@ export default async function TeleAgentPlugin(input = {}) {
         const hasSplitExpiry = Boolean(
           points.expiringSoon && points.expiringSoon.balance > 0 && points.expiringSoon.balance < totalBalance,
         )
-        const expiryTag = typeof points.expiresAt === 'string' && points.expiresAt.length >= 10
-          ? `${points.expiresAt.slice(5, 10)}到期`
+        const expiryDate = typeof points.expiresAt === 'string' && points.expiresAt.length >= 10
+          ? points.expiresAt.slice(0, 10)
           : ''
         const windows = [{
           // balance：预付钱包式余额，没有 used/limit，不参与「用尽」判断
-          name: !hasSplitExpiry && expiryTag ? `积分余额 (${expiryTag})` : '积分余额',
+          name: !hasSplitExpiry && expiryDate ? `积分余额（最近到期：${expiryDate}）` : '积分余额',
           balance: totalBalance,
           unit: '积分',
           ...(points.expiresAt ? { runsOutAt: points.expiresAt } : {}),
@@ -333,7 +333,7 @@ export default async function TeleAgentPlugin(input = {}) {
         // 当存在分批过期且近期到期余额小于总余额时，单独提示即将到期的那部分，并把具体日期放进 name 以便 UI 直接展示
         if (hasSplitExpiry) {
           windows.push({
-            name: `${points.expiringSoon.date.slice(5)}到期`,
+            name: `最近到期：${points.expiringSoon.date}`,
             balance: points.expiringSoon.balance,
             unit: '积分',
             runsOutAt: points.expiringSoon.effectiveEnd,
