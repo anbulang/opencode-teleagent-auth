@@ -330,12 +330,12 @@ export default async function TeleAgentPlugin(input = {}) {
           unit: '积分',
           ...(points.expiresAt ? { runsOutAt: points.expiresAt } : {}),
         }]
-        // 当存在分批过期且近期到期余额小于总余额时，单独提示即将到期的那部分，并把具体日期放进 name 以便 UI 直接展示
+        // 当存在分批过期且近期到期余额小于总余额时，用 text+display 展示「最近到期：日期 积分」，避免 UI 自动拼接「剩余」产生歧义
         if (hasSplitExpiry) {
           windows.push({
-            name: `最近到期：${points.expiringSoon.date}`,
-            balance: points.expiringSoon.balance,
-            unit: '积分',
+            name: '最近到期：',
+            display: `${points.expiringSoon.date} ${points.expiringSoon.balance} 积分`,
+            text: true,
             runsOutAt: points.expiringSoon.effectiveEnd,
           })
         }
