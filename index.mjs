@@ -305,13 +305,23 @@ export default async function TeleAgentPlugin(input = {}) {
         if (!points.ok) {
           return { signIn: 'kept', error: points.error ?? '读取积分失败', windows: [] }
         }
+        const totalBalance = Number(points.balance ?? 0)
         const windows = [{
           // balance：预付钱包式余额，没有 used/limit，不参与「用尽」判断
           name: '积分余额',
-          balance: Number(points.balance ?? 0),
+          balance: totalBalance,
           unit: '积分',
           ...(points.expiresAt ? { runsOutAt: points.expiresAt } : {}),
         }]
+        // 当存在分批过期且近期到期余额小于总余额时，单独提示即将到期的那部分，避免误解全部余额同时过期
+        if (points.expiringSoon && points.expiringSoon.balance > 0 && points.expiringSoon.balance < totalBalance) {
+          windows.push({
+            name: '近期到期',
+            balance: points.expiringSoon.balance,
+            unit: '积分',
+            runsOutAt: points.expiringSoon.effectiveEnd,
+          })
+        }
         return {
           signIn: 'kept',
           plan: center.ok ? (center.planName ?? undefined) : undefined,
@@ -381,7 +391,7 @@ export default async function TeleAgentPlugin(input = {}) {
     tool: {
       // 工具名不要带 teleagent 前缀：magpie 会拼成 `<插件短名>_<工具名>` 并且用全名去重复
       points: {
-        description: '查询本机登录的 TeleAgent 账号积分余额与每日签到状态。只读：不消耗积分、不触发领取、不发任何模型请求。',
+        description: '查询本机登录的 TeleAgent 账号积分余额、分批有效期明细与每日签到状态。只读：不消耗积分、不触发领取、不发任何模型请求。',
         args: {
           type: 'object',
           properties: {},
@@ -404,6 +414,8 @@ export default async function TeleAgentPlugin(input = {}) {
             ok: true,
             balance: points.balance ?? null,
             expiresAt: points.expiresAt ?? null,
+            expiringSoon: points.expiringSoon ?? null,
+            batches: Array.isArray(points.batches) ? points.batches : [],
             planName: center.ok ? (center.planName ?? null) : null,
             claimedToday: daily.ok ? daily.claimedToday : null,
             claimable: daily.ok ? daily.claimable : null,

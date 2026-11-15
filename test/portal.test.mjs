@@ -33,6 +33,7 @@ import {
   readPortalAuth,
   portalRequest,
   fetchPoints,
+  extractPointBatches,
   fetchDailyStatus,
   claimDaily,
   fetchUserCenter,
@@ -587,6 +588,41 @@ describe('fetchPoints', () => {
     const r = await fetchPoints(AUTH, { fetchImpl: impl })
     expect(r.ok).toBe(false)
     expect(r.error).toContain('500')
+  })
+
+  it('展开 isAggregated 的 subItems 并按到期时间排序与汇总近期到期积分', async () => {
+    const impl = fakeFetch(() => okJson({
+      pointsBalance: 6274.26,
+      userRole: 'INDIVIDUAL',
+      groups: [{
+        type: 'campaign',
+        typeName: '积分福利社',
+        active: [{
+          name: '积分福利社',
+          balance: 6274.26,
+          effectiveEnd: '2026-11-30 23:59:59',
+          isAggregated: true,
+          subItems: [
+            { name: '首登即赠积分礼', balance: 3000, effectiveEnd: '2027-02-12 07:10:41', planCode: 'bp_act_newuser' },
+            { name: '月度积分赠礼', balance: 2974.26, effectiveEnd: '2026-11-30 23:59:59', planCode: 'bp_sys_monthly_basic' },
+            { name: '每日登录积分', balance: 100, effectiveEnd: '2026-12-11 23:59:59', planCode: 'bp_sys_daily_login' },
+            { name: '每日登录积分', balance: 200, effectiveEnd: '2026-11-30 23:59:59', planCode: 'bp_sys_daily_login' },
+          ],
+        }],
+      }],
+    }))
+    const r = await fetchPoints(AUTH, { fetchImpl: impl })
+    expect(r.ok).toBe(true)
+    expect(r.expiresAt).toBe('2026-11-30 23:59:59')
+    expect(r.batches.length).toBe(4)
+    expect(r.batches[0].effectiveEnd).toBe('2026-11-30 23:59:59')
+    expect(r.batches[3].name).toBe('首登即赠积分礼')
+    expect(r.expiringSoon).toEqual({
+      date: '2026-11-30',
+      effectiveEnd: '2026-11-30 23:59:59',
+      balance: 3174.26,
+      names: ['月度积分赠礼', '每日登录积分'],
+    })
   })
 })
 
