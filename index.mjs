@@ -26,8 +26,11 @@
  * 上游对自动化流量敏感：两个账号曾因合成探测被封。插件内置并发 2 / 每分钟 20 次 /
  * 401·403 熔断 10 分钟，并且**不做**任何启动自检式的聊天请求。
  */
+import fs from 'node:fs'
+import path from 'node:path'
 import { buildModels, MODELS, TELEAI_BASE_URL, TELEAI_ORIGIN } from './lib/models.mjs'
 import {
+  appPaths,
   diagnoseCredential,
   listCredentialScopes,
   readDeviceMeta,
@@ -60,10 +63,18 @@ function keyForScope(scope) {
   return `${scope}`
 }
 
-/** 从保存的账号 key 里取出 scope */
+/** 从保存的账号 key 里取出 scope（兼容旧插件残留的纯数字 accountId key） */
 function scopeOf(auth) {
   const key = typeof auth?.key === 'string' ? auth.key : ''
   if (key.length === 0) return ''
+  if (/^\d+$/.test(key)) {
+    const usersDir = path.join(appPaths().data, 'users')
+    const direct = path.join(usersDir, key, 'app-auth', 'token.json')
+    const prefixed = `v1_public_${key}`
+    if (!fs.existsSync(direct) && fs.existsSync(path.join(usersDir, prefixed, 'app-auth', 'token.json'))) {
+      return prefixed
+    }
+  }
   return key
 }
 
@@ -306,17 +317,23 @@ export default async function TeleAgentPlugin(input = {}) {
           return { signIn: 'kept', error: points.error ?? '读取积分失败', windows: [] }
         }
         const totalBalance = Number(points.balance ?? 0)
+        const hasSplitExpiry = Boolean(
+          points.expiringSoon && points.expiringSoon.balance > 0 && points.expiringSoon.balance < totalBalance,
+        )
+        const expiryTag = typeof points.expiresAt === 'string' && points.expiresAt.length >= 10
+          ? `${points.expiresAt.slice(5, 10)}到期`
+          : ''
         const windows = [{
           // balance：预付钱包式余额，没有 used/limit，不参与「用尽」判断
-          name: '积分余额',
+          name: !hasSplitExpiry && expiryTag ? `积分余额 (${expiryTag})` : '积分余额',
           balance: totalBalance,
           unit: '积分',
           ...(points.expiresAt ? { runsOutAt: points.expiresAt } : {}),
         }]
-        // 当存在分批过期且近期到期余额小于总余额时，单独提示即将到期的那部分，避免误解全部余额同时过期
-        if (points.expiringSoon && points.expiringSoon.balance > 0 && points.expiringSoon.balance < totalBalance) {
+        // 当存在分批过期且近期到期余额小于总余额时，单独提示即将到期的那部分，并把具体日期放进 name 以便 UI 直接展示
+        if (hasSplitExpiry) {
           windows.push({
-            name: '近期到期',
+            name: `${points.expiringSoon.date.slice(5)}到期`,
             balance: points.expiringSoon.balance,
             unit: '积分',
             runsOutAt: points.expiringSoon.effectiveEnd,

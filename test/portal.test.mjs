@@ -626,6 +626,59 @@ describe('fetchPoints', () => {
   })
 })
 
+describe('readPortalAuth 缓存兜底', () => {
+  const makeJwt = (expSec) => {
+    const h = Buffer.from('{"alg":"HS256"}').toString('base64url')
+    const p = Buffer.from(JSON.stringify({ exp: expSec })).toString('base64url')
+    return `${h}.${p}.sig`
+  }
+
+  it('Cookies 成功读取后写入缓存；后续遇到 EBUSY 时自动回退到未过期缓存', () => {
+    const { home, userData, cleanup } = makeHome()
+    try {
+      const scope = 'v1_public_2092131099330392064'
+      const db = touch(path.join(userData, 'Partitions', `owner%3A${scope}`, 'Network', 'Cookies'))
+      const validJwt = makeJwt(Math.floor(Date.now() / 1000) + 3600)
+      const first = readPortalAuth(home, scope, {
+        run: () => `operationToken|${validJwt}\noperToken|oper-1\n`,
+      })
+      expect(first?.operationToken).toBe(validJwt)
+      expect(first?.source).toBe(db)
+
+      // 模拟桌面端运行锁库（run 抛 EBUSY）
+      const fallback = readPortalAuth(home, scope, {
+        run: () => { throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' }) },
+      })
+      expect(fallback).toEqual({
+        userId: '2092131099330392064',
+        operationToken: validJwt,
+        operToken: 'oper-1',
+        source: 'cache',
+      })
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('缓存中的 JWT 已过期时，不回退使用过期凭据', () => {
+    const { home, userData, cleanup } = makeHome()
+    try {
+      const scope = 'v1_public_2092131099330392064'
+      touch(path.join(userData, 'Partitions', `owner%3A${scope}`, 'Network', 'Cookies'))
+      const expiredJwt = makeJwt(Math.floor(Date.now() / 1000) - 60)
+      readPortalAuth(home, scope, {
+        run: () => `operationToken|${expiredJwt}\n`,
+      })
+      const fallback = readPortalAuth(home, scope, {
+        run: () => { throw new Error('EBUSY') },
+      })
+      expect(fallback).toBeNull()
+    } finally {
+      cleanup()
+    }
+  })
+})
+
 // ---------------------------------------------------------------- fetchDailyStatus
 
 describe('fetchDailyStatus', () => {
