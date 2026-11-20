@@ -189,7 +189,8 @@ $APP_DATA/Partitions/owner%3A<scope>/Cookies
 这是 SQLite。已检查的 macOS 实例把值存在 `value` 列；Windows 可将值放在
 `encrypted_value`，插件使用与 token 相同的本机密钥解密。Chromium schema 24+
 在明文前放入 `SHA256(host_key)`，插件校验后才剥掉前 32 字节。
-只接受 `agent.teleai.com.cn` 或 `.agent.teleai.com.cn` 的两个目标 cookie。
+只接受 `agent.teleai.com.cn`、`.agent.teleai.com.cn` 或父域 `.teleai.com.cn` 的两个目标 cookie
+（桌面端 3.1.1 实测写在父域 `.teleai.com.cn` 下）。
 
 读取路径优先 `Network/Cookies`，再尝试旧版 `Cookies`；自动检测账号时先读当前账号分区，
 之后才尝试主库，明确指定账号时始终不回退主库。数据库和 WAL 复制到私有临时目录后只读打开，

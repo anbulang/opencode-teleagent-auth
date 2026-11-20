@@ -65,6 +65,17 @@ describe('内置 SQLite cookie 读取器', () => {
     expect(readCookieValues(file)).toBeNull()
   })
 
+  it('读取桌面端 3.x 写在父域 .teleai.com.cn 下的 cookie', () => {
+    db.query('INSERT INTO cookies VALUES (?, ?, ?, ?)').run('operationToken', 'parent-domain-token', new Uint8Array(), '.teleai.com.cn')
+    db.query('INSERT INTO cookies VALUES (?, ?, ?, ?)').run('operToken', 'parent-domain-oper', new Uint8Array(), '.teleai.com.cn')
+    expect(readCookieValues(file)).toEqual({ operationToken: 'parent-domain-token', operToken: 'parent-domain-oper' })
+  })
+
+  it('父域 Windows v24 cookie 的域名哈希按其自身 host_key 校验', () => {
+    const options = windowsCookie({ host: '.teleai.com.cn' })
+    expect(readCookieValues(file, options)).toEqual({ operationToken: 'windows-fixture-cookie' })
+  })
+
   function windowsCookie({ host = '.agent.teleai.com.cn', hashedHost = host, version = 24, prefix = 'v10' } = {}) {
     const key = Buffer.alloc(32, 0x42)
     fs.writeFileSync(path.join(root, 'Local State'), JSON.stringify({

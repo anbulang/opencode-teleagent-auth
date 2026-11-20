@@ -3,6 +3,15 @@
 本仓库与 npm 包同名，都是 `opencode-teleagent-auth`（magpie / OpenCode 的 TeleAgent 供应商插件）；
 不依赖、也不包含 DeepSeek Harness 的插件。
 
+## 0.2.1 — 2026-11-20
+
+- 修复 TeleAgent 桌面端 3.x（3.1.1 实测）下积分与签到一直报
+  「缺少该账号的积分 cookie / 读不到积分凭据」：新版桌面端把 `operToken` /
+  `operationToken` 写在父域 `.teleai.com.cn` 下（Chromium 域 cookie 会随
+  `agent.teleai.com.cn` 请求一并发送，凭据本身有效），而读取 SQL 只认
+  `agent.teleai.com.cn` / `.agent.teleai.com.cn`，一行都查不到。域名过滤现在
+  同时接受父域 `.teleai.com.cn`，Windows v24 域名哈希仍按各自行的 host_key 校验。
+
 ## 0.2.0 — 2026-11-09
 
 - 新增 Windows 支持：用同一系统用户的 DPAPI 解锁 `Local State` 密钥，再解密 Electron
